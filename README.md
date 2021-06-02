@@ -19,6 +19,7 @@ RLBox has been used in Firefox to sandbox a few libraries, the source code for t
 * Any return value from a sandboxed function will be marked `tainted` and **CANNOT** be used without verifying.
 * RLBox does **NOT** support functions with variable arguments. Make sure that you write wrapper functions in the library to convert functions with variable arguments into one with fixed arguments.
 * After every change, it is best to do a re-build and a quick test if things work as expected.
+* RLBox only supports the C ABI - so the library to be sandboxed must have a C interface for the application.
 
 ## Steps
 
@@ -114,7 +115,7 @@ The below example is from sandboxing libopus in Firefox.
 
 * Once all functions are sandboxed, you could start writing the verifiers for each return value and out parameter from the library APIs.
 * For writing these verifiers, you need to go through the API documentation of the library to make note of the expected values.
-* Verifiers are written using the following set of APIs, they expect as parameter a verifier function (a promise) which can run checks on the tainted value and copy over a suitable value into the application memory. Some of the APIs for verifying are:
+* Verifiers are written using the following set of APIs, they expect as parameter a verifier function (a promise) which can run checks on the tainted value and copy over a suitable value into the application memory. Some of the common APIs you would need for verifying are:
   * `copy_and_verify()`
   * `copy_and_verify_buffer()`
   * `copy_and_verify_string()`
@@ -141,4 +142,18 @@ The below example is from sandboxing libopus in Firefox.
         return OPUS_INVALID_PACKET;
   });
   ```
-  
+
+* Once the verifiers are written, make sure to have built your application and tested it. It would be better to check for any instances of the `UNSAFE_*` in the application before proceeding to the next step.
+
+
+### 4. Enabling WASM Sandbox
+There are 2 things that you must do to be able to enable the WASM based sandboxing.
+  #### 4.1 Building your library via WASM toolchain
+
+  * C code can be compiled into WASM using a recent version of `clang`
+  * A good guide of compiling a C library to WASM is available [here](https://depth-first.com/articles/2019/10/16/compiling-c-to-webassembly-and-running-it-without-emscripten/).
+  * One could then integrate the lucet compiler in their toolchain to get from WASM to the native architecture.
+
+
+  #### 4.2 Change sandbox type to WASM from noop
+  TODO
