@@ -56,7 +56,7 @@ RLBox has been used in Firefox to sandbox a few libraries, the source code for t
 * Add calls to the `CreateSandbox()` and `DeleteSandbox()` at the places identified.
 * Build your application and check for any build errors introduced. We would also suggest to quickly run the application and check if everything is working. It should be as no changes have been made to the functional part of the code.  
 
-### Sandbox Function Calls
+### 2. Sandbox Function Calls
 * Once done with the above, start sandboxing function calls of the library. Remember that, RLBox does not allow any pointers from the application memory to be passed into the sandbox memory.  This is probably the most common cause of build errors when sandboxing a library in an application.  
 Note: This requires looking at the API of the library being sandboxed for in and out parameters, return values.
 The below example is from sandboxing libopus in Firefox.  
@@ -101,5 +101,44 @@ The below example is from sandboxing libopus in Firefox.
   RLBox provides 2 sets of APIs one could use to incrementally migrate to sandboxed APIs. Both sets should be used only when migrating, and the developer should work towards removing as many instance of these APIs when the migration/integration to RLBox is done.
 
   * `unverified_safe_*`: can be used to "untaint" any `tainted` value coming from the sandbox and use it in the application without writing verifiers for them.
-  * `UNSAFE_*`: can be used to cast a pointer/variable in the application memory to its' `tainted` equivalent and pass it as a parameter to a sandboxed function. There is another difference, WASM sandoxing can be enabled with `unverified_safe_*` being present in the application, however, with `UNSAFE_*` present anywhere in the application, WASM sandboxing cannot be enabled. It will throw a build error.
+  * `UNSAFE_*`: can be used to cast a pointer/variable in the application memory to its' `tainted` equivalent and pass it as a parameter to a sandboxed function.  
 
+  There is another difference among the above 2 set of APIs, WASM sandoxing can be enabled with `unverified_safe_*` being present in the application, however, with `UNSAFE_*` present anywhere in the application, WASM sandboxing cannot be enabled. It will throw a build error.
+
+* We **strongly** recommend building and testing for every function you sandbox. The testing maybe a quick one that tests the core functionality of the library you are sandboxing. Eg: In our case (libopus), we built Firefox and launched a YouTube video since it uses libopus for audio.
+
+* Once all the functions are sandboxed, you should run the full test suite you have related to the library being sandboxed and look for any unexpected behaviour.
+
+
+### 3. Writing Verifiers
+
+* Once all functions are sandboxed, you could start writing the verifiers for each return value and out parameter from the library APIs.
+* For writing these verifiers, you need to go through the API documentation of the library to make note of the expected values.
+* Verifiers are written using the following set of APIs, they expect as parameter a verifier function (a promise) which can run checks on the tainted value and copy over a suitable value into the application memory. Some of the APIs for verifying are:
+  * `copy_and_verify()`
+  * `copy_and_verify_buffer()`
+  * `copy_and_verify_string()`
+  * `copy_and_verify_range()`
+
+  An example is given below from our experience with libopus on Firefox:
+  ```C++
+  /* Consider the following sandboxed function - it returns the number of frames in the passed data */
+  auto frames_number = mSandbox->invoke_sandbox_function(
+      opus_packet_get_nb_frames, t_aSampleData, aSample->Size());
+  /* The maximum number of frames in an opus packet is 63*2880 - so we check if
+  the number returned is positive and within the valid range. The API could
+  also return OPUS_BAD_ARG or OPUS_INVALID_PACKET in case of an error - so
+  those checks are also present. If the values do not match either values,
+  we return OPUS_INVALID_PACKET to the application */
+  int verifiedFramesNumber = frames_number.copy_and_verify(
+                            [](int frames_number) {
+      if (frames_number > 0 && frames_number <= (63*2880))
+        return frames_number;
+      else if (frames_number == OPUS_BAD_ARG ||
+              frames_number == OPUS_INVALID_PACKET)
+        return frames_number;
+      else
+        return OPUS_INVALID_PACKET;
+  });
+  ```
+  
